@@ -588,7 +588,7 @@ tools = [
 ]
 
 # --- 5. Inicialização do Modelo Gemini com Ferramentas ---
-model = genai.GenerativeModel(model_name='gemini-1.5-flash', tools=tools)
+model = genai.GenerativeModel(model_name='gemini-2.0-flash', tools=tools)
 
 # --- 6. Função para Interagir com o Agente ---
 def chat_with_data_agent(query: str):
