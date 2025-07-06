@@ -439,16 +439,7 @@ def get_top_bottom_remuneration_values(df, orgao_name: str, year: int, num_compa
     return {'text': result_text}
 
 
-# --- 4. Definição das Ferramentas (Tool Specifications) para o Gemini ---
-O erro `AttributeError: module 'google.generativeai.types.content_types' has no attribute 'Type'` ocorre porque a importação `from google.generativeai.types import content_types as glm` torna `glm` um módulo que lida com o *conteúdo* das mensagens (`Text`, `Part`, `Content`), mas não expõe o `Type` para a **definição de esquemas de ferramentas (schemas de parâmetros)**.
 
-Para a definição dos tipos de esquema das suas ferramentas (OBJECT, INTEGER, STRING, BOOLEAN), você deve usar a referência correta, que é `genai.protos.Schema.Type`.
-
-**A solução é reverter o uso de `glm.Type` para `genai.protos.Schema.Type` em todas as definições de tipo dentro da sua lista `tools`.**
-
-**Substitua todo o bloco `tools = [...]` no seu arquivo `app.py` pelo código abaixo:**
-
-```python
 # --- 4. Definição das Ferramentas (Tool Specifications) para o Gemini ---
 # Cada função que o Gemini pode chamar precisa de uma declaração.
 
