@@ -591,6 +591,7 @@ tools = [
 model = genai.GenerativeModel(model_name='gemini-2.0-flash', tools=tools)
 
 # --- 6. Função para Interagir com o Agente ---
+# --- 6. Função para Interagir com o Agente ---
 def chat_with_data_agent(query: str):
     if st.session_state['df_resultante'].empty:
         st.error("O DataFrame está vazio. Não é possível realizar consultas. Verifique o carregamento dos dados.")
@@ -632,7 +633,11 @@ def chat_with_data_agent(query: str):
     for msg in st.session_state.messages:
         # Copia a mensagem, removendo chaves que não são aceitas pela API do Gemini no histórico
         temp_msg = msg.copy()
-        if 'image_base64' in temp_msg: # Remove a chave de imagem que é só para exibição
+        # REMOVER A NOVA CHAVE DE EXIBIÇÃO DE IMAGEM AQUI
+        if 'image_base64_for_display' in temp_msg: 
+            del temp_msg['image_base64_for_display']
+        # Manter a remoção da chave antiga, caso ainda esteja presente em algum lugar
+        if 'image_base64' in temp_msg: 
             del temp_msg['image_base64']
         chat_history_for_gemini.append(temp_msg)
 
