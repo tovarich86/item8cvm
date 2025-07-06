@@ -8,7 +8,8 @@ import streamlit as st # Importar Streamlit
 
 # Importar a biblioteca do Google Generative AI
 import google.generativeai as genai
-# Não importaremos glm aqui, para evitar o problema com content_types
+# Importar tipos específicos para gerenciar o histórico de chat
+from google.generativeai.types import content_types as glm
 
 
 # --- Configurações para melhor visualização dos gráficos ---
@@ -25,7 +26,7 @@ try:
     genai.configure(api_key=GEMINI_API_KEY)
 except Exception as e:
     st.error(f"ERRO: Não foi possível configurar a API do Gemini. Certifique-se de que a chave 'GEMINI_API_KEY' está configurada nos segredos do Streamlit. Erro: {e}")
-    st.stop()
+    st.stop() # Para a execução se a API não estiver configurada
 
 # --- Carregamento do CSV Resultante ---
 output_csv_filename = 'dados_cvm_mesclados.csv'
@@ -273,7 +274,7 @@ def get_correlation_members_bonus(df, year: int) -> dict:
     if df.empty: return {'text': "DataFrame vazio. Não foi possível realizar a consulta.", 'image_base64': None}
     if 'NUM_MEMBROS_REMUNERADOS_TOTAL' not in df.columns or 'BONUS' not in df.columns or \
        'NOME_COMPANHIA' not in df.columns or 'ANO_REFER' not in df.columns:
-        return {'text': "Colunas necessárias (NUM_MEMBROS_REMUNERADOS_TOTAL, BONUS, NOME_COMPANHIA, ANO_REFER) não encontradas.", 'image_base64': None}
+        return {'text': "Colunas necessárias (NUM_MEMBROS_REMUNERADOS_TOTAL, BONUS, NOME_COMPANHIA, ANO_REFER) não encontradas."}
     filtered_df = df[df['ANO_REFER'] == year].copy()
     if filtered_df.empty:
         return {'text': f"Nenhum dado encontrado para o ano {year}.", 'image_base64': None}
@@ -596,7 +597,8 @@ def chat_with_data_agent(query: str):
         st.error("O DataFrame está vazio. Não é possível realizar consultas. Verifique o carregamento dos dados.")
         return
 
-    system_instruction = """
+    # Definindo a instrução do sistema (System Prompt)
+    system_instruction_text = """
     Você é um especialista em análise de dados de remuneração de administradores para companhias de capital aberto no Brasil. Sua função é responder a perguntas do usuário baseando-se exclusivamente nos dados fornecidos a partir de um arquivo CSV que contém informações detalhadas sobre salários, bônus e outras formas de remuneração para a Diretoria Estatutária, Conselho de Administração e Conselho Fiscal.
 
     Seu conhecimento é focado nos dados do CSV. Você pode realizar as seguintes análises utilizando as ferramentas disponíveis:
@@ -619,22 +621,31 @@ def chat_with_data_agent(query: str):
     Se a informação solicitada não puder ser obtida com as ferramentas disponíveis ou não estiver no CSV, informe ao usuário de forma clara e objetiva. Evite dar informações genéricas ou especulativas.
     """
 
-    # --- Tratamento do Histórico para start_chat ---
-    # st.session_state.messages armazena dicionários Python simples
-    # Passamos esta lista diretamente como history para o GenAI,
-    # que é capaz de converter dicionários compatíveis para seus tipos internos.
-    chat_history_for_gemini = st.session_state.messages
+    # --- Tratamento do Histórico para start_chat (priming) ---
+    # `st.session_state.messages` armazena dicionários Python simples
+    # Vamos criar um histórico temporário para passar ao start_chat,
+    # injetando a instrução do sistema como a primeira mensagem de usuário.
+    
+    # Criar um histórico que começa com a instrução do sistema
+    chat_history_for_gemini = [
+        {"role": "user", "parts": [{"text": system_instruction_text}]}
+    ]
+    # Adicionar o restante do histórico salvo na sessão
+    for msg in st.session_state.messages:
+        # As mensagens salvas no session_state já devem ser compatíveis com {"role": ..., "parts": [{"text": ...}]}
+        chat_history_for_gemini.append(msg)
 
-    # Iniciar o chat com o modelo e a instrução do sistema
+
+    # Iniciar o chat com o modelo. Removido 'system_instruction' como parâmetro.
     try:
-        chat = model.start_chat(history=chat_history_for_gemini, system_instruction=system_instruction)
+        chat = model.start_chat(history=chat_history_for_gemini)
     except Exception as e:
         st.error(f"Erro ao iniciar o chat com o Gemini (start_chat): {e}")
-        st.warning("Isso pode indicar um problema com a chave da API, cota excedida, ou histórico inválido. Por favor, tente recarregar a página.")
+        st.warning("Isso pode indicar um problema com a chave da API, cota excedida, ou formato de histórico inválido. Por favor, tente recarregar a página.")
         st.session_state.messages = [] # Limpa o histórico em caso de erro no start_chat
         return
 
-    response = None # Inicializa response
+    response = None 
     try:
         response = chat.send_message(query)
     except Exception as e:
@@ -647,7 +658,8 @@ def chat_with_data_agent(query: str):
 
     if response and response.candidates and response.candidates[0].content.parts:
         # Verificar se o modelo decidiu chamar uma ferramenta
-        if response.candidates[0].content.parts[0].function_call:
+        # A API retorna um objeto Content com uma 'part' que contém 'function_call'
+        if hasattr(response.candidates[0].content.parts[0], 'function_call') and response.candidates[0].content.parts[0].function_call:
             function_call = response.candidates[0].content.parts[0].function_call
             function_name = function_call.name
             function_args = dict(function_call.args) 
@@ -736,12 +748,33 @@ st.markdown("Faça perguntas sobre os dados de remuneração de administradores 
 # Inicializar histórico de chat no estado da sessão do Streamlit
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    # Adiciona uma mensagem de boas-vindas inicial do assistente
+    # A instrução do sistema será a primeira mensagem do usuário para 'priming'
+    # Adicionar uma mensagem de boas-vindas inicial do assistente (para o usuário)
     st.session_state.messages.append({"role": "assistant", "parts": [{"text": "Olá! Sou seu agente de análise de remunerações da CVM. Como posso ajudar hoje?"}]})
 
 
 # Exibir mensagens anteriores no chat
 for message_entry in st.session_state.messages:
+    # Ignorar a primeira mensagem (instrução do sistema) se ela for do 'user' e estiver vazia (priming)
+    # ou se for apenas a instrução do sistema que não deve ser exibida ao usuário final.
+    # No entanto, como a instrução agora será a primeira 'user' message que o LLM vê,
+    # não queremos exibi-la como parte do chat visível.
+    # A mensagem de boas-vindas do assistente é a que inicia o diálogo.
+    
+    # Exibir apenas se a mensagem não for a primeira mensagem (que é o priming)
+    # ou se for uma mensagem 'assistant'.
+    
+    # Para evitar exibir a instrução do sistema como uma mensagem do usuário:
+    # Se a mensagem for do usuário E for a primeira mensagem (o priming), não exiba.
+    # Uma forma mais robusta é ter um flag 'is_system_priming_message'.
+    
+    # Por enquanto, vamos exibir todas as mensagens de 'assistant' e as mensagens de 'user'
+    # que não são a mensagem de priming inicial (que não está no st.session_state.messages
+    # no mesmo formato que o priming para o LLM)
+    
+    # Vamos exibir todas as mensagens salvas, confiando que o priming não é salvo visivelmente.
+    # Apenas para garantir que não há erro, vamos re-verificar o loop abaixo.
+
     with st.chat_message(message_entry["role"]):
         for part_data in message_entry["parts"]:
             if "text" in part_data:
