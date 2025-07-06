@@ -1,5 +1,5 @@
 pandas
 matplotlib
 seaborn
-google-generativeai>=0.4.0 # Garante uma versão compatível
+google-generativeai==0.5.0 # Alterado para versão específica
 streamlit
