@@ -8,6 +8,8 @@ import streamlit as st # Importar Streamlit
 
 # Importar a biblioteca do Google Generative AI
 import google.generativeai as genai
+# Importar tipos específicos para gerenciar o histórico de chat
+from google.generativeai.types import content_types as glm
 
 # --- Configurações para melhor visualização dos gráficos ---
 sns.set_style("whitegrid")
@@ -30,9 +32,10 @@ except Exception as e:
 
 # --- Carregamento do CSV Resultante ---
 output_csv_filename = 'dados_cvm_mesclados.csv'
-df_resultante = pd.DataFrame() # Inicializa como DataFrame vazio
+# df_resultante é carregado e armazenado no st.session_state para persistência
+# entre as reruns do Streamlit.
 
-if not st.session_state.get('df_loaded'): # Carregar DataFrame apenas uma vez
+if 'df_resultante' not in st.session_state:
     st.info(f"Tentando carregar o arquivo CSV: '{output_csv_filename}'...")
     try:
         df_resultante = pd.read_csv(
@@ -41,7 +44,6 @@ if not st.session_state.get('df_loaded'): # Carregar DataFrame apenas uma vez
             encoding="utf-8-sig"
         )
         st.session_state['df_resultante'] = df_resultante # Armazena no estado da sessão
-        st.session_state['df_loaded'] = True
         st.success(f"Arquivo '{output_csv_filename}' carregado com sucesso.")
     except FileNotFoundError:
         st.error(f"ERRO: Arquivo '{output_csv_filename}' não encontrado. Certifique-se de que o nome está correto e que foi incluído no repositório.")
@@ -57,8 +59,8 @@ if df_resultante.empty:
     st.stop()
 
 # --- 3. Definição das Funções de Consulta (Ferramentas) ---
-# TODAS AS FUNÇÕES GET_... AQUI, COM AS CORREÇÕES ANTERIORES (int() e retorno dict)
-# Certifique-se de copiar o conteúdo COMPLETO e CORRIGIDO das funções desta célula.
+# AQUI VÃO TODAS AS SUAS FUNÇÕES 'GET_...'
+# Certifique-se que o conteúdo das funções está como no último código fornecido (com int() e retorno dict {'text': ..., 'image_base64': ...})
 
 def get_salario_medio_diretoria(df, year: int) -> dict: 
     year = int(year) 
@@ -436,20 +438,16 @@ def get_top_bottom_remuneration_values(df, orgao_name: str, year: int, num_compa
         result_text += "Nenhum dado de menores remunerações.\n"
     return {'text': result_text}
 
-# --- 4. Definição das Ferramentas (Tool Specifications) para o Gemini ---
-# Cada função que o Gemini pode chamar precisa de uma declaração.
 
 # --- 4. Definição das Ferramentas (Tool Specifications) para o Gemini ---
-# Cada função que o Gemini pode chamar precisa de uma declaração.
-
 tools = [
     genai.protos.FunctionDeclaration(
         name='get_salario_medio_diretoria',
         description='Calcula e retorna o salário médio de membros do órgão de administração "DIRETORIA" para um ano específico. Use esta ferramenta quando a pergunta envolver o salário médio da diretoria.',
         parameters=genai.protos.Schema(
-            type=genai.protos.Type.OBJECT, # CORRIGIDO AQUI
+            type=glm.Type.OBJECT, # Corrigido aqui
             properties={
-                'year': genai.protos.Schema(type=genai.protos.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # CORRIGIDO AQUI
+                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
             },
             required=['year'],
         ),
@@ -458,10 +456,10 @@ tools = [
         name='get_top_companies_by_salary',
         description='Identifica e retorna as top N empresas com a maior soma total de SALARIO em um determinado ano (ou o último ano disponível se não especificado), e gera um gráfico de barras visualizando esses dados. Use para perguntas sobre as empresas que mais pagam salários.',
         parameters=genai.protos.Schema(
-            type=genai.protos.Type.OBJECT, # CORRIGIDO AQUI
+            type=glm.Type.OBJECT, # Corrigido aqui
             properties={
-                'num_companies': genai.protos.Schema(type=genai.protos.Type.INTEGER, description='O número de empresas a serem retornadas, ex: 10, 5, 3'), # CORRIGIDO AQUI
-                'year': genai.protos.Schema(type=genai.protos.Type.INTEGER, description='O ano de referência para a consulta. Se omitido, a ferramenta usará o último ano com dados.'), # CORRIGIDO AQUI
+                'num_companies': genai.protos.Schema(type=glm.Type.INTEGER, description='O número de empresas a serem retornadas, ex: 10, 5, 3'), # Corrigido aqui
+                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a consulta. Se omitido, a ferramenta usará o último ano com dados.'), # Corrigido aqui
             },
             required=['num_companies'],
         ),
@@ -470,11 +468,11 @@ tools = [
         name='get_total_bonus_by_company',
         description='Calcula e retorna o valor total de BÔNUS pago por uma empresa específica (NOME_COMPANHIA) em um determinado ano (ANO_REFER). Pode ser usado para busca exata ou parcial do nome da empresa. Use para saber o valor total de bônus de uma empresa específica.',
         parameters=genai.protos.Schema(
-            type=genai.protos.Type.OBJECT, # CORRIGIDO AQUI
+            type=glm.Type.OBJECT, # Corrigido aqui
             properties={
-                'company_name': genai.protos.Schema(type=genai.protos.Type.STRING, description='O nome completo da empresa ou parte do nome, ex: "BANCO DO BRASIL S.A.", "ITAU"'), # CORRIGIDO AQUI
-                'year': genai.protos.Schema(type=genai.protos.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # CORRIGIDO AQUI
-                'exact_match': genai.protos.Schema(type=genai.protos.Type.BOOLEAN, description='Opcional. Se True, busca o nome exato. Se False (padrão), busca por conteúdo.'), # CORRIGIDO AQUI
+                'company_name': genai.protos.Schema(type=glm.Type.STRING, description='O nome completo da empresa ou parte do nome, ex: "BANCO DO BRASIL S.A.", "ITAU"'), # Corrigido aqui
+                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
+                'exact_match': genai.protos.Schema(type=glm.Type.BOOLEAN, description='Opcional. Se True, busca o nome exato. Se False (padrão), busca por conteúdo.'), # Corrigido aqui
             },
             required=['company_name', 'year'],
         ),
@@ -483,10 +481,10 @@ tools = [
         name='get_sector_bonus_range',
         description='Calcula e retorna o bônus mínimo, máximo e médio para empresas dentro de um setor de atividade específico (SETOR_DE_ATIVDADE) em um determinado ano. Use para analisar a faixa de bônus em um setor.',
         parameters=genai.protos.Schema(
-            type=genai.protos.Type.OBJECT, # CORRIGIDO AQUI
+            type=glm.Type.OBJECT, # Corrigido aqui
             properties={
-                'sector_name': genai.protos.Schema(type=genai.protos.Type.STRING, description='O nome do setor de atividade, ex: "BANCARIO", "SAUDE", "VAREJO"'), # CORRIGIDO AQUI
-                'year': genai.protos.Schema(type=genai.protos.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # CORRIGIDO AQUI
+                'sector_name': genai.protos.Schema(type=glm.Type.STRING, description='O nome do setor de atividade, ex: "BANCARIO", "SAUDE", "VAREJO"'), # Corrigido aqui
+                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
             },
             required=['sector_name', 'year'],
         ),
@@ -495,11 +493,11 @@ tools = [
         name='get_remuneration_trend_by_orgao',
         description='Analisa a evolução da remuneração média de um órgão de administração (ORGAO_ADMINISTRACAO) ao longo de um período de anos e gera um gráfico de linha. Use para ver a tendência de remuneração de um órgão específico ao longo do tempo.',
         parameters=genai.protos.Schema(
-            type=genai.protos.Type.OBJECT, # CORRIGIDO AQUI
+            type=glm.Type.OBJECT, # Corrigido aqui
             properties={
-                'orgao': genai.protos.Schema(type=genai.protos.Type.STRING, description='O nome do órgão de administração, ex: "CONSELHO DE ADMINISTRACAO", "DIRETORIA"'), # CORRIGIDO AQUI
-                'start_year': genai.protos.Schema(type=genai.protos.Type.INTEGER, description='O ano de início do período, ex: 2023'), # CORRIGIDO AQUI
-                'end_year': genai.protos.Schema(type=genai.protos.Type.INTEGER, description='O ano de fim do período, ex: 2025'), # CORRIGIDO AQUI
+                'orgao': genai.protos.Schema(type=glm.Type.STRING, description='O nome do órgão de administração, ex: "CONSELHO DE ADMINISTRACAO", "DIRETORIA"'), # Corrigido aqui
+                'start_year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de início do período, ex: 2023'), # Corrigido aqui
+                'end_year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de fim do período, ex: 2025'), # Corrigido aqui
             },
             required=['orgao', 'start_year', 'end_year'],
         ),
@@ -508,10 +506,10 @@ tools = [
         name='get_avg_bonus_effective_by_sector',
         description='Calcula e retorna o valor médio do bônus efetivo pago por empresas de um setor específico (SETOR_DE_ATIVDADE) em um determinado ano. Use para entender o bônus médio em um setor.',
         parameters=genai.protos.Schema(
-            type=genai.protos.Type.OBJECT, # CORRIGIDO AQUI
+            type=glm.Type.OBJECT, # Corrigido aqui
             properties={
-                'sector_name': genai.protos.Schema(type=genai.protos.Type.STRING, description='O nome do setor, ex: "FINANCEIRO", "SAUDE"'), # CORRIGIDO AQUI
-                'year': genai.protos.Schema(type=genai.protos.Type.INTEGER, description='O ano de referência, ex: 2024'), # CORRIGIDO AQUI
+                'sector_name': genai.protos.Schema(type=glm.Type.STRING, description='O nome do setor, ex: "FINANCEIRO", "SAUDE"'), # Corrigido aqui
+                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência, ex: 2024'), # Corrigido aqui
             },
             required=['sector_name', 'year'],
         ),
@@ -520,10 +518,10 @@ tools = [
         name='get_top_sectors_by_avg_total_remuneration',
         description='Identifica os N setores com a maior remuneração total média (TOTAL_REMUNERACAO_ORGAO) em um ano específico e gera um gráfico. Use para comparar o nível de remuneração entre diferentes setores.',
         parameters=genai.protos.Schema(
-            type=genai.protos.Type.OBJECT, # CORRIGIDO AQUI
+            type=glm.Type.OBJECT, # Corrigido aqui
             properties={
-                'num_sectors': genai.protos.Schema(type=genai.protos.Type.INTEGER, description='O número de setores a serem retornados, ex: 5, 3'), # CORRIGIDO AQUI
-                'year': genai.protos.Schema(type=genai.protos.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # CORRIGIDO AQUI
+                'num_sectors': genai.protos.Schema(type=glm.Type.INTEGER, description='O número de setores a serem retornados, ex: 5, 3'), # Corrigido aqui
+                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
             },
             required=['num_sectors', 'year'],
         ),
@@ -532,11 +530,11 @@ tools = [
         name='get_remuneration_as_percentage_of_revenue',
         description='Calcula a remuneração total de um órgão como percentual da receita para as N maiores empresas de um setor em um ano. Use para analisar a proporção da remuneração em relação ao faturamento.',
         parameters=genai.protos.Schema(
-            type=genai.protos.Type.OBJECT, # CORRIGIDO AQUI
+            type=glm.Type.OBJECT, # Corrigido aqui
             properties={
-                'num_companies': genai.protos.Schema(type=genai.protos.Type.INTEGER, description='O número de empresas a serem retornadas, ex: 3, 5'), # CORRIGIDO AQUI
-                'sector_name': genai.protos.Schema(type=genai.protos.Type.STRING, description='O nome do setor de atividade, ex: "VAREJO", "TECNOLOGIA DA INFORMACAO"'), # CORRIGIDO AQUI
-                'year': genai.protos.Schema(type=genai.protos.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # CORRIGIDO AQUI
+                'num_companies': genai.protos.Schema(type=glm.Type.INTEGER, description='O número de empresas a serem retornadas, ex: 3, 5'), # Corrigido aqui
+                'sector_name': genai.protos.Schema(type=glm.Type.STRING, description='O nome do setor de atividade, ex: "VAREJO", "TECNOLOGIA DA INFORMACAO"'), # Corrigido aqui
+                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
             },
             required=['num_companies', 'sector_name', 'year'],
         ),
@@ -545,9 +543,9 @@ tools = [
         name='get_correlation_members_bonus',
         description='Analisa a correlação entre o número de membros remunerados e o bônus total para um ano específico, gerando um gráfico de dispersão. Use para entender a relação entre o tamanho da equipe remunerada e o total de bônus.',
         parameters=genai.protos.Schema(
-            type=genai.protos.Type.OBJECT, # CORRIGIDO AQUI
+            type=glm.Type.OBJECT, # Corrigido aqui
             properties={
-                'year': genai.protos.Schema(type=genai.protos.Type.INTEGER, description='O ano de referência para a análise, ex: 2025'), # CORRIGIDO AQUI
+                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a análise, ex: 2025'), # Corrigido aqui
             },
             required=['year'],
         ),
@@ -556,10 +554,10 @@ tools = [
         name='get_avg_remuneration_by_orgao_segment',
         description='Calcula a média da remuneração total para um órgão específico por segmento de listagem (setor de atividade) em um dado ano. Use para comparar a remuneração de um órgão em diferentes setores.',
         parameters=genai.protos.Schema(
-            type=genai.protos.Type.OBJECT, # CORRIGIDO AQUI
+            type=glm.Type.OBJECT, # Corrigido aqui
             properties={
-                'orgao_name': genai.protos.Schema(type=genai.protos.Type.STRING, description='O nome do órgão de administração, ex: "DIRETORIA", "CONSELHO FISCAL"'), # CORRIGIDO AQUI
-                'year': genai.protos.Schema(type=genai.protos.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # CORRIGIDO AQUI
+                'orgao_name': genai.protos.Schema(type=glm.Type.STRING, description='O nome do órgão de administração, ex: "DIRETORIA", "CONSELHO FISCAL"'), # Corrigido aqui
+                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
             },
             required=['orgao_name', 'year'],
         ),
@@ -568,10 +566,10 @@ tools = [
         name='get_remuneration_structure_proportion',
         description='Calcula a proporção de empresas que utilizam diferentes estruturas de remuneração para um órgão em um ano. Use para entender como as empresas remuneram seus membros.',
         parameters=genai.protos.Schema(
-            type=genai.protos.Type.OBJECT, # CORRIGIDO AQUI
+            type=glm.Type.OBJECT, # Corrigido aqui
             properties={
-                'orgao_name': genai.protos.Schema(type=genai.protos.Type.STRING, description='O nome do órgão de administração, ex: "CONSELHO DE ADMINISTRACAO", "DIRETORIA"'), # CORRIGIDO AQUI
-                'year': genai.protos.Schema(type=genai.protos.Type.INTEGER, description='O ano de referência para a análise, ex: 2025'), # CORRIGIDO AQUI
+                'orgao_name': genai.protos.Schema(type=glm.Type.STRING, description='O nome do órgão de administração, ex: "CONSELHO DE ADMINISTRACAO", "DIRETORIA"'), # Corrigido aqui
+                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a análise, ex: 2025'), # Corrigido aqui
             },
             required=['orgao_name', 'year'],
         ),
@@ -580,11 +578,11 @@ tools = [
         name='get_top_bottom_remuneration_values',
         description='Lista os N maiores e N menores valores de remuneração total (TOTAL_REMUNERACAO_ORGAO) para um órgão de administração específico em um dado ano. Use para identificar as empresas com os maiores e menores pagamentos a um órgão.',
         parameters=genai.protos.Schema(
-            type=genai.protos.Type.OBJECT, # CORRIGIDO AQUI
+            type=glm.Type.OBJECT, # Corrigido aqui
             properties={
-                'orgao_name': genai.protos.Schema(type=genai.protos.Type.STRING, description='O nome do órgão de administração, ex: "DIRETORIA", "CONSELHO FISCAL"'), # CORRIGIDO AQUI
-                'year': genai.protos.Schema(type=genai.protos.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # CORRIGIDO AQUI
-                'num_companies': genai.protos.Schema(type=genai.protos.Type.INTEGER, description='Opcional. O número de empresas a serem listadas para top/bottom. O padrão é 5.'), # CORRIGIDO AQUI
+                'orgao_name': genai.protos.Schema(type=glm.Type.STRING, description='O nome do órgão de administração, ex: "DIRETORIA", "CONSELHO FISCAL"'), # Corrigido aqui
+                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
+                'num_companies': genai.protos.Schema(type=glm.Type.INTEGER, description='Opcional. O número de empresas a serem listadas para top/bottom. O padrão é 5.'), # Corrigido aqui
             },
             required=['orgao_name', 'year'],
         ),
@@ -600,7 +598,6 @@ def chat_with_data_agent(query: str):
     Simula a interação com o agente de IA, processando a query do usuário,
     chamando ferramentas e exibindo a resposta.
     """
-    # Verifica se o DataFrame foi carregado. Streamlit lida com o estado da sessão.
     if st.session_state['df_resultante'].empty:
         st.error("O DataFrame está vazio. Não é possível realizar consultas. Verifique o carregamento dos dados.")
         return
@@ -629,11 +626,42 @@ def chat_with_data_agent(query: str):
     Se a informação solicitada não puder ser obtida com as ferramentas disponíveis ou não estiver no CSV, informe ao usuário de forma clara e objetiva. Evite dar informações genéricas ou especulativas.
     """
 
+    # --- Tratamento do Histórico para start_chat ---
+    # `st.session_state.messages` precisa ser convertido para o formato esperado pelo `genai.GenerativeModel.start_chat`
+    # Cada entrada deve ser um objeto glm.Content.
+    chat_history_for_gemini = []
+    for msg in st.session_state.messages:
+        if msg["role"] == "user":
+            chat_history_for_gemini.append(glm.Content(role="user", parts=[glm.Part(text=msg["parts"][0])]))
+        elif msg["role"] == "model":
+            # As respostas do modelo são armazenadas como glm.Content diretamente
+            # ou como um dicionário que contém a resposta da ferramenta (text/image_base64)
+            if isinstance(msg["parts"][0], str): # Se for texto puro (resposta final do modelo)
+                chat_history_for_gemini.append(glm.Content(role="model", parts=[glm.Part(text=msg["parts"][0])]))
+            elif isinstance(msg["parts"][0], dict) and 'text' in msg["parts"][0]:
+                # Se for a resposta de uma ferramenta (que tem text e talvez image_base64)
+                # O importante é o texto da resposta da ferramenta ser enviado de volta ao modelo
+                # como parte da FunctionResponse, não no histórico principal de forma complexa.
+                # O histórico aqui deve ser o que o modelo *gerou*, não o tool_output.
+                # A resposta do modelo após a ferramenta será um Content com texto.
+                # Se o histórico já contém a parte gerada pelo modelo (e não a saída bruta da ferramenta), está ok.
+                # No código atual, st.session_state.messages.append({"role": "model", "parts": [response.candidates[0].content.parts[0]]})
+                # então response.candidates[0].content.parts[0] já é o Proto Part correto.
+                # Podemos simplesmente passar o 'content' original do response se o armazenarmos assim.
+
+                # Para simplificar e evitar problemas de proto, vamos apenas reconstruir messages com texto.
+                # Se o histórico é apenas para o LLM aprender, texto é o suficiente.
+                chat_history_for_gemini.append(glm.Content(role="model", parts=[glm.Part(text=msg["text"])]))
+            else: # Caso seja um objeto proto do Gemini Content direto
+                chat_history_for_gemini.append(msg["parts"][0]) # Já é o Content proto
+
     # Iniciar o chat com o modelo e a instrução do sistema
-    chat = model.start_chat(history=st.session_state.messages, system_instruction=system_instruction)
+    # Passamos o histórico construído `chat_history_for_gemini`
+    chat = model.start_chat(history=chat_history_for_gemini, system_instruction=system_instruction)
     response = chat.send_message(query)
 
-    # Verificar se o modelo decidiu chamar uma ferramenta
+    # ... (restante da função chat_with_data_agent permanece o mesmo) ...
+    # O código abaixo está bom para a lógica.
     if response.candidates[0].content.parts[0].function_call:
         function_call = response.candidates[0].content.parts[0].function_call
         function_name = function_call.name
@@ -643,52 +671,66 @@ def chat_with_data_agent(query: str):
 
         tool_output = {} 
         try:
-            # Passar o DataFrame do estado da sessão para as funções
             if function_name == 'get_salario_medio_diretoria':
-                tool_output = get_salario_medio_diretoria(st.session_state['df_resultante'], **function_args)
+                tool_output = get_salario_medio_diretoria(df_resultante, **function_args)
             elif function_name == 'get_top_companies_by_salary':
-                tool_output = get_top_companies_by_salary(st.session_state['df_resultante'], **function_args)
+                tool_output = get_top_companies_by_salary(df_resultante, **function_args)
             elif function_name == 'get_total_bonus_by_company':
-                tool_output = get_total_bonus_by_company(st.session_state['df_resultante'], **function_args)
+                tool_output = get_total_bonus_by_company(df_resultante, **function_args)
             elif function_name == 'get_sector_bonus_range':
-                tool_output = get_sector_bonus_range(st.session_state['df_resultante'], **function_args)
+                tool_output = get_sector_bonus_range(df_resultante, **function_args)
             elif function_name == 'get_remuneration_trend_by_orgao':
-                tool_output = get_remuneration_trend_by_orgao(st.session_state['df_resultante'], **function_args)
+                tool_output = get_remuneration_trend_by_orgao(df_resultante, **function_args)
             elif function_name == 'get_avg_bonus_effective_by_sector':
-                tool_output = get_avg_bonus_effective_by_sector(st.session_state['df_resultante'], **function_args)
+                tool_output = get_avg_bonus_effective_by_sector(df_resultante, **function_args)
             elif function_name == 'get_top_sectors_by_avg_total_remuneration':
-                tool_output = get_top_sectors_by_avg_total_remuneration(st.session_state['df_resultante'], **function_args)
+                tool_output = get_top_sectors_by_avg_total_remuneration(df_resultante, **function_args)
             elif function_name == 'get_remuneration_as_percentage_of_revenue':
-                tool_output = get_remuneration_as_percentage_of_revenue(st.session_state['df_resultante'], **function_args)
+                tool_output = get_remuneration_as_percentage_of_revenue(df_resultante, **function_args)
             elif function_name == 'get_correlation_members_bonus':
-                tool_output = get_correlation_members_bonus(st.session_state['df_resultante'], **function_args)
+                tool_output = get_correlation_members_bonus(df_resultante, **function_args)
             elif function_name == 'get_avg_remuneration_by_orgao_segment':
-                tool_output = get_avg_remuneration_by_orgao_segment(st.session_state['df_resultante'], **function_args)
+                tool_output = get_avg_remuneration_by_orgao_segment(df_resultante, **function_args)
             elif function_name == 'get_remuneration_structure_proportion':
-                tool_output = get_remuneration_structure_proportion(st.session_state['df_resultante'], **function_args)
+                tool_output = get_remuneration_structure_proportion(df_resultante, **function_args)
             elif function_name == 'get_top_bottom_remuneration_values':
-                tool_output = get_top_bottom_remuneration_values(st.session_state['df_resultante'], **function_args)
+                tool_output = get_top_bottom_remuneration_values(df_resultante, **function_args)
             else:
                 tool_output = {'text': f"Erro: Função '{function_name}' não reconhecida ou não implementada."}
         except Exception as e:
             tool_output = {'text': f"Erro ao executar a função '{function_name}': {e}"}
 
         # Enviar o resultado da ferramenta de volta para o modelo
-        response = chat.send_message(genai.protos.Part(function_response=genai.protos.FunctionResponse(
+        response = chat.send_message(glm.Part(function_response=glm.FunctionResponse( # Use glm.Part e glm.FunctionResponse
             name=function_name,
             response=tool_output 
         )))
     
+    # --- Atualização do Histórico e Exibição para Streamlit ---
     # Adicionar a resposta do agente ao histórico de mensagens
-    st.session_state.messages.append({"role": "model", "parts": [response.candidates[0].content.parts[0]]})
+    # Armazenar o objeto Content gerado pelo modelo
+    st.session_state.messages.append(response.candidates[0].content)
 
     # Exibir a resposta final do modelo na interface do Streamlit
     with st.chat_message("assistant"):
-        st.markdown(response.candidates[0].content.parts[0].text)
-
-        # Se a ferramenta retornou uma imagem, exibi-la
-        if isinstance(tool_output, dict) and 'image_base64' in tool_output and tool_output['image_base64']:
-            st.image(base64.b64decode(tool_output['image_base64']), caption="Gráfico gerado pelo agente")
+        # Se a resposta do modelo contém partes (texto ou função/ferramenta)
+        for part in response.candidates[0].content.parts:
+            if glm.is_text(part): # Se for um Content de texto
+                st.markdown(part.text)
+            elif glm.is_function_call(part): # Se for uma chamada de função (não exibimos diretamente ao usuário)
+                # st.write(f"Agente: Chamando ferramenta '{part.function_call.name}'...")
+                pass
+            elif glm.is_function_response(part): # Se for uma resposta de função (o LLM reage a ela)
+                # A resposta final que o LLM gera após a ferramenta já é Content com texto.
+                # Aqui você exibe a imagem se houver.
+                if isinstance(tool_output, dict) and 'image_base64' in tool_output and tool_output['image_base64']:
+                    st.image(base64.b64decode(tool_output['image_base64']), caption="Gráfico gerado pelo agente")
+                
+            # Adicionalmente, se tool_output veio com imagem e texto, e o texto não foi absorvido no LLM final response
+            if 'image_base64' in tool_output and tool_output['image_base64'] and not glm.is_function_response(response.candidates[0].content.parts[0]):
+                 # Isso é para casos onde o LLM não gera texto adicional, só a ferramenta.
+                 # Mas o fluxo ideal é o LLM gerar texto baseado na saída da ferramenta.
+                 pass
 
 
 # --- Interface do Streamlit ---
@@ -700,30 +742,36 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 # Exibir mensagens anteriores no chat
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        if message["role"] == "user":
-            st.markdown(message["parts"][0])
-        elif message["role"] == "model":
-            # Aqui lidamos com tool_code e tool_output para reexibir corretamente
-            if isinstance(message["parts"][0], genai.protos.Part) and message["parts"][0].function_call:
-                # Isso é uma chamada de ferramenta, não vamos reexibir diretamente,
-                # a menos que você queira ver o log da ferramenta novamente.
-                # A resposta final do modelo é que importa.
+for message_content in st.session_state.messages: # Cada message_content agora é um glm.Content
+    with st.chat_message(message_content.role):
+        for part in message_content.parts:
+            if glm.is_text(part):
+                st.markdown(part.text)
+            elif glm.is_function_call(part):
+                # Não exibe a chamada da ferramenta diretamente ao usuário final
+                # st.code(f"Chamada de função: {part.function_call.name}({part.function_call.args})")
                 pass
-            elif isinstance(message["parts"][0], dict) and 'text' in message["parts"][0]:
-                st.markdown(message["parts"][0]['text'])
-                if 'image_base64' in message["parts"][0] and message["parts"][0]['image_base64']:
-                    st.image(base64.b64decode(message["parts"][0]['image_base64']), caption="Gráfico gerado (Histórico)")
-            else:
-                 st.markdown(message["parts"][0].text) # Resposta de texto puro
+            elif glm.is_function_response(part):
+                # A resposta da ferramenta pode ser um dicionário.
+                # Se você quer exibir a saída bruta da ferramenta:
+                # st.json(part.function_response) # Para depuração
+
+                # Se a resposta da função continha uma imagem, exiba-a
+                if isinstance(part.function_response, dict) and 'image_base64' in part.function_response and part.function_response['image_base64']:
+                    st.image(base64.b64decode(part.function_response['image_base64']), caption="Gráfico gerado (Histórico)")
+                # Se a resposta da função continha texto, mas o modelo não o processou em sua resposta principal,
+                # e você quer mostrar esse texto da ferramenta:
+                # if isinstance(part.function_response, dict) and 'text' in part.function_response:
+                #     st.markdown(f"_(Saída da ferramenta)_: {part.function_response['text']}")
+
 
 # Campo de entrada para o usuário
 user_query = st.chat_input("Pergunte algo sobre os dados da CVM:")
 
 if user_query:
-    # Adicionar a pergunta do usuário ao histórico de mensagens
-    st.session_state.messages.append({"role": "user", "parts": [user_query]})
+    # Adicionar a pergunta do usuário ao histórico de mensagens como um objeto glm.Content
+    st.session_state.messages.append(glm.Content(role="user", parts=[glm.Part(text=user_query)]))
+    
     with st.chat_message("user"):
         st.markdown(user_query)
     
