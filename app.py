@@ -440,14 +440,26 @@ def get_top_bottom_remuneration_values(df, orgao_name: str, year: int, num_compa
 
 
 # --- 4. Definição das Ferramentas (Tool Specifications) para o Gemini ---
+O erro `AttributeError: module 'google.generativeai.types.content_types' has no attribute 'Type'` ocorre porque a importação `from google.generativeai.types import content_types as glm` torna `glm` um módulo que lida com o *conteúdo* das mensagens (`Text`, `Part`, `Content`), mas não expõe o `Type` para a **definição de esquemas de ferramentas (schemas de parâmetros)**.
+
+Para a definição dos tipos de esquema das suas ferramentas (OBJECT, INTEGER, STRING, BOOLEAN), você deve usar a referência correta, que é `genai.protos.Schema.Type`.
+
+**A solução é reverter o uso de `glm.Type` para `genai.protos.Schema.Type` em todas as definições de tipo dentro da sua lista `tools`.**
+
+**Substitua todo o bloco `tools = [...]` no seu arquivo `app.py` pelo código abaixo:**
+
+```python
+# --- 4. Definição das Ferramentas (Tool Specifications) para o Gemini ---
+# Cada função que o Gemini pode chamar precisa de uma declaração.
+
 tools = [
     genai.protos.FunctionDeclaration(
         name='get_salario_medio_diretoria',
         description='Calcula e retorna o salário médio de membros do órgão de administração "DIRETORIA" para um ano específico. Use esta ferramenta quando a pergunta envolver o salário médio da diretoria.',
         parameters=genai.protos.Schema(
-            type=glm.Type.OBJECT, # Corrigido aqui
+            type=genai.protos.Schema.Type.OBJECT, # Corrigido aqui
             properties={
-                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
+                'year': genai.protos.Schema(type=genai.protos.Schema.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
             },
             required=['year'],
         ),
@@ -456,10 +468,10 @@ tools = [
         name='get_top_companies_by_salary',
         description='Identifica e retorna as top N empresas com a maior soma total de SALARIO em um determinado ano (ou o último ano disponível se não especificado), e gera um gráfico de barras visualizando esses dados. Use para perguntas sobre as empresas que mais pagam salários.',
         parameters=genai.protos.Schema(
-            type=glm.Type.OBJECT, # Corrigido aqui
+            type=genai.protos.Schema.Type.OBJECT, # Corrigido aqui
             properties={
-                'num_companies': genai.protos.Schema(type=glm.Type.INTEGER, description='O número de empresas a serem retornadas, ex: 10, 5, 3'), # Corrigido aqui
-                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a consulta. Se omitido, a ferramenta usará o último ano com dados.'), # Corrigido aqui
+                'num_companies': genai.protos.Schema(type=genai.protos.Schema.Type.INTEGER, description='O número de empresas a serem retornadas, ex: 10, 5, 3'), # Corrigido aqui
+                'year': genai.protos.Schema(type=genai.protos.Schema.Type.INTEGER, description='O ano de referência para a consulta. Se omitido, a ferramenta usará o último ano com dados.'), # Corrigido aqui
             },
             required=['num_companies'],
         ),
@@ -468,11 +480,11 @@ tools = [
         name='get_total_bonus_by_company',
         description='Calcula e retorna o valor total de BÔNUS pago por uma empresa específica (NOME_COMPANHIA) em um determinado ano (ANO_REFER). Pode ser usado para busca exata ou parcial do nome da empresa. Use para saber o valor total de bônus de uma empresa específica.',
         parameters=genai.protos.Schema(
-            type=glm.Type.OBJECT, # Corrigido aqui
+            type=genai.protos.Schema.Type.OBJECT, # Corrigido aqui
             properties={
-                'company_name': genai.protos.Schema(type=glm.Type.STRING, description='O nome completo da empresa ou parte do nome, ex: "BANCO DO BRASIL S.A.", "ITAU"'), # Corrigido aqui
-                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
-                'exact_match': genai.protos.Schema(type=glm.Type.BOOLEAN, description='Opcional. Se True, busca o nome exato. Se False (padrão), busca por conteúdo.'), # Corrigido aqui
+                'company_name': genai.protos.Schema(type=genai.protos.Schema.Type.STRING, description='O nome completo da empresa ou parte do nome, ex: "BANCO DO BRASIL S.A.", "ITAU"'), # Corrigido aqui
+                'year': genai.protos.Schema(type=genai.protos.Schema.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
+                'exact_match': genai.protos.Schema(type=genai.protos.Schema.Type.BOOLEAN, description='Opcional. Se True, busca o nome exato. Se False (padrão), busca por conteúdo.'), # Corrigido aqui
             },
             required=['company_name', 'year'],
         ),
@@ -481,10 +493,10 @@ tools = [
         name='get_sector_bonus_range',
         description='Calcula e retorna o bônus mínimo, máximo e médio para empresas dentro de um setor de atividade específico (SETOR_DE_ATIVDADE) em um determinado ano. Use para analisar a faixa de bônus em um setor.',
         parameters=genai.protos.Schema(
-            type=glm.Type.OBJECT, # Corrigido aqui
+            type=genai.protos.Schema.Type.OBJECT, # Corrigido aqui
             properties={
-                'sector_name': genai.protos.Schema(type=glm.Type.STRING, description='O nome do setor de atividade, ex: "BANCARIO", "SAUDE", "VAREJO"'), # Corrigido aqui
-                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
+                'sector_name': genai.protos.Schema(type=genai.protos.Schema.Type.STRING, description='O nome do setor de atividade, ex: "BANCARIO", "SAUDE", "VAREJO"'), # Corrigido aqui
+                'year': genai.protos.Schema(type=genai.protos.Schema.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
             },
             required=['sector_name', 'year'],
         ),
@@ -493,11 +505,11 @@ tools = [
         name='get_remuneration_trend_by_orgao',
         description='Analisa a evolução da remuneração média de um órgão de administração (ORGAO_ADMINISTRACAO) ao longo de um período de anos e gera um gráfico de linha. Use para ver a tendência de remuneração de um órgão específico ao longo do tempo.',
         parameters=genai.protos.Schema(
-            type=glm.Type.OBJECT, # Corrigido aqui
+            type=genai.protos.Schema.Type.OBJECT, # Corrigido aqui
             properties={
-                'orgao': genai.protos.Schema(type=glm.Type.STRING, description='O nome do órgão de administração, ex: "CONSELHO DE ADMINISTRACAO", "DIRETORIA"'), # Corrigido aqui
-                'start_year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de início do período, ex: 2023'), # Corrigido aqui
-                'end_year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de fim do período, ex: 2025'), # Corrigido aqui
+                'orgao': genai.protos.Schema(type=genai.protos.Schema.Type.STRING, description='O nome do órgão de administração, ex: "CONSELHO DE ADMINISTRACAO", "DIRETORIA"'), # Corrigido aqui
+                'start_year': genai.protos.Schema(type=genai.protos.Schema.Type.INTEGER, description='O ano de início do período, ex: 2023'), # Corrigido aqui
+                'end_year': genai.protos.Schema(type=genai.protos.Schema.Type.INTEGER, description='O ano de fim do período, ex: 2025'), # Corrigido aqui
             },
             required=['orgao', 'start_year', 'end_year'],
         ),
@@ -506,10 +518,10 @@ tools = [
         name='get_avg_bonus_effective_by_sector',
         description='Calcula e retorna o valor médio do bônus efetivo pago por empresas de um setor específico (SETOR_DE_ATIVDADE) em um determinado ano. Use para entender o bônus médio em um setor.',
         parameters=genai.protos.Schema(
-            type=glm.Type.OBJECT, # Corrigido aqui
+            type=genai.protos.Schema.Type.OBJECT, # Corrigido aqui
             properties={
-                'sector_name': genai.protos.Schema(type=glm.Type.STRING, description='O nome do setor, ex: "FINANCEIRO", "SAUDE"'), # Corrigido aqui
-                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência, ex: 2024'), # Corrigido aqui
+                'sector_name': genai.protos.Schema(type=genai.protos.Schema.Type.STRING, description='O nome do setor, ex: "FINANCEIRO", "SAUDE"'), # Corrigido aqui
+                'year': genai.protos.Schema(type=genai.protos.Schema.Type.INTEGER, description='O ano de referência, ex: 2024'), # Corrigido aqui
             },
             required=['sector_name', 'year'],
         ),
@@ -518,10 +530,10 @@ tools = [
         name='get_top_sectors_by_avg_total_remuneration',
         description='Identifica os N setores com a maior remuneração total média (TOTAL_REMUNERACAO_ORGAO) em um ano específico e gera um gráfico. Use para comparar o nível de remuneração entre diferentes setores.',
         parameters=genai.protos.Schema(
-            type=glm.Type.OBJECT, # Corrigido aqui
+            type=genai.protos.Schema.Type.OBJECT, # Corrigido aqui
             properties={
-                'num_sectors': genai.protos.Schema(type=glm.Type.INTEGER, description='O número de setores a serem retornados, ex: 5, 3'), # Corrigido aqui
-                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
+                'num_sectors': genai.protos.Schema(type=genai.protos.Schema.Type.INTEGER, description='O número de setores a serem retornados, ex: 5, 3'), # Corrigido aqui
+                'year': genai.protos.Schema(type=genai.protos.Schema.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
             },
             required=['num_sectors', 'year'],
         ),
@@ -530,11 +542,11 @@ tools = [
         name='get_remuneration_as_percentage_of_revenue',
         description='Calcula a remuneração total de um órgão como percentual da receita para as N maiores empresas de um setor em um ano. Use para analisar a proporção da remuneração em relação ao faturamento.',
         parameters=genai.protos.Schema(
-            type=glm.Type.OBJECT, # Corrigido aqui
+            type=genai.protos.Schema.Type.OBJECT, # Corrigido aqui
             properties={
-                'num_companies': genai.protos.Schema(type=glm.Type.INTEGER, description='O número de empresas a serem retornadas, ex: 3, 5'), # Corrigido aqui
-                'sector_name': genai.protos.Schema(type=glm.Type.STRING, description='O nome do setor de atividade, ex: "VAREJO", "TECNOLOGIA DA INFORMACAO"'), # Corrigido aqui
-                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
+                'num_companies': genai.protos.Schema(type=genai.protos.Schema.Type.INTEGER, description='O número de empresas a serem retornadas, ex: 3, 5'), # Corrigido aqui
+                'sector_name': genai.protos.Schema(type=genai.protos.Schema.Type.STRING, description='O nome do setor de atividade, ex: "VAREJO", "TECNOLOGIA DA INFORMACAO"'), # Corrigido aqui
+                'year': genai.protos.Schema(type=genai.protos.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
             },
             required=['num_companies', 'sector_name', 'year'],
         ),
@@ -543,9 +555,9 @@ tools = [
         name='get_correlation_members_bonus',
         description='Analisa a correlação entre o número de membros remunerados e o bônus total para um ano específico, gerando um gráfico de dispersão. Use para entender a relação entre o tamanho da equipe remunerada e o total de bônus.',
         parameters=genai.protos.Schema(
-            type=glm.Type.OBJECT, # Corrigido aqui
+            type=genai.protos.Schema.Type.OBJECT, # Corrigido aqui
             properties={
-                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a análise, ex: 2025'), # Corrigido aqui
+                'year': genai.protos.Schema(type=genai.protos.Schema.Type.INTEGER, description='O ano de referência para a análise, ex: 2025'), # Corrigido aqui
             },
             required=['year'],
         ),
@@ -554,10 +566,10 @@ tools = [
         name='get_avg_remuneration_by_orgao_segment',
         description='Calcula a média da remuneração total para um órgão específico por segmento de listagem (setor de atividade) em um dado ano. Use para comparar a remuneração de um órgão em diferentes setores.',
         parameters=genai.protos.Schema(
-            type=glm.Type.OBJECT, # Corrigido aqui
+            type=genai.protos.Schema.Type.OBJECT, # Corrigido aqui
             properties={
-                'orgao_name': genai.protos.Schema(type=glm.Type.STRING, description='O nome do órgão de administração, ex: "DIRETORIA", "CONSELHO FISCAL"'), # Corrigido aqui
-                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
+                'orgao_name': genai.protos.Schema(type=genai.protos.Schema.Type.STRING, description='O nome do órgão de administração, ex: "DIRETORIA", "CONSELHO FISCAL"'), # Corrigido aqui
+                'year': genai.protos.Schema(type=genai.protos.Schema.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
             },
             required=['orgao_name', 'year'],
         ),
@@ -566,10 +578,10 @@ tools = [
         name='get_remuneration_structure_proportion',
         description='Calcula a proporção de empresas que utilizam diferentes estruturas de remuneração para um órgão em um ano. Use para entender como as empresas remuneram seus membros.',
         parameters=genai.protos.Schema(
-            type=glm.Type.OBJECT, # Corrigido aqui
+            type=genai.protos.Schema.Type.OBJECT, # Corrigido aqui
             properties={
-                'orgao_name': genai.protos.Schema(type=glm.Type.STRING, description='O nome do órgão de administração, ex: "CONSELHO DE ADMINISTRACAO", "DIRETORIA"'), # Corrigido aqui
-                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a análise, ex: 2025'), # Corrigido aqui
+                'orgao_name': genai.protos.Schema(type=genai.protos.Schema.Type.STRING, description='O nome do órgão de administração, ex: "CONSELHO DE ADMINISTRACAO", "DIRETORIA"'), # Corrigido aqui
+                'year': genai.protos.Schema(type=genai.protos.Schema.Type.INTEGER, description='O ano de referência para a análise, ex: 2025'), # Corrigido aqui
             },
             required=['orgao_name', 'year'],
         ),
@@ -578,17 +590,17 @@ tools = [
         name='get_top_bottom_remuneration_values',
         description='Lista os N maiores e N menores valores de remuneração total (TOTAL_REMUNERACAO_ORGAO) para um órgão de administração específico em um dado ano. Use para identificar as empresas com os maiores e menores pagamentos a um órgão.',
         parameters=genai.protos.Schema(
-            type=glm.Type.OBJECT, # Corrigido aqui
+            type=genai.protos.Schema.Type.OBJECT, # Corrigido aqui
             properties={
-                'orgao_name': genai.protos.Schema(type=glm.Type.STRING, description='O nome do órgão de administração, ex: "DIRETORIA", "CONSELHO FISCAL"'), # Corrigido aqui
-                'year': genai.protos.Schema(type=glm.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
-                'num_companies': genai.protos.Schema(type=glm.Type.INTEGER, description='Opcional. O número de empresas a serem listadas para top/bottom. O padrão é 5.'), # Corrigido aqui
+                'orgao_name': genai.protos.Schema(type=genai.protos.Schema.Type.STRING, description='O nome do órgão de administração, ex: "DIRETORIA", "CONSELHO FISCAL"'), # Corrigido aqui
+                'year': genai.protos.Schema(type=genai.protos.Schema.Type.INTEGER, description='O ano de referência para a consulta, ex: 2025'), # Corrigido aqui
+                'num_companies': genai.protos.Schema(type=genai.protos.Schema.Type.INTEGER, description='Opcional. O número de empresas a serem listadas para top/bottom. O padrão é 5.'), # Corrigido aqui
             },
             required=['orgao_name', 'year'],
         ),
     ),
 ]
-
+```
 # --- 5. Inicialização do Modelo Gemini com Ferramentas ---
 model = genai.GenerativeModel(model_name='gemini-1.5-flash', tools=tools)
 
