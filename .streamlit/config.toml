@@ -1,0 +1,7 @@
+[browser]
+gatherUsageStats = false
+
+[runner]
+# Set the page title and favicon
+page_title = "Agente de Análise de Remunerações FRE"
+page_icon = "💰" # ou "📊" ou "💰"
