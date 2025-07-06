@@ -591,7 +591,7 @@ tools = [
         ),
     ),
 ]
-```
+
 # --- 5. Inicialização do Modelo Gemini com Ferramentas ---
 model = genai.GenerativeModel(model_name='gemini-1.5-flash', tools=tools)
 
