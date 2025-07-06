@@ -9,8 +9,9 @@ import streamlit as st # Importar Streamlit
 # Importar a biblioteca do Google Generative AI
 import google.generativeai as genai
 # Importar tipos específicos para gerenciar o histórico de chat
-# Vamos usar esses tipos apenas para CONSTRUIR a history para o model.start_chat
-from google.generativeai.types import content_types as glm
+# Estes serão usados no back-end pelo start_chat, mas não vamos construí-los explicitamente aqui para o session_state
+from google.generativeai.types import content_types as glm # Mantido para glm.is_text, glm.is_function_call, etc.
+
 
 # --- Configurações para melhor visualização dos gráficos ---
 sns.set_style("whitegrid")
@@ -55,7 +56,7 @@ if df_resultante.empty:
 
 # --- 3. Definição das Funções de Consulta (Ferramentas) ---
 # TODAS AS SUAS FUNÇÕES 'GET_...' DEVEM VIR AQUI.
-# Certifique-se que o conteúdo delas está como no último código fornecido
+# Certifique-se que o conteúdo delas está como no código corrigido anteriormente
 # (com int() nas entradas numéricas e retorno dict {'text': ..., 'image_base64': ...})
 
 def get_salario_medio_diretoria(df, year: int) -> dict: 
@@ -360,7 +361,7 @@ def get_remuneration_structure_proportion(df, orgao_name: str, year: int) -> dic
     filtered_df = df[(df['ORGAO_ADMINISTRACAO'].str.contains(orgao_name, na=False, case=False)) &
                      (df['ANO_REFER'] == year)].copy()
     if filtered_df.empty:
-        return {'text': f"Nenhum dado encontrado para o órgão '{orgao_name}' no ano {year}."}
+        return {'text': f"Nenhum dado encontrado para o órgão '{orgao_name}' no ano {year}.", 'image_base64': None}
     def classify_remuneration_structure(row):
         has_fixa = pd.notna(row['SALARIO']) and row['SALARIO'] > 0
         has_variavel = (pd.notna(row['BONUS']) and row['BONUS'] > 0) or \
@@ -408,7 +409,7 @@ def get_top_bottom_remuneration_values(df, orgao_name: str, year: int, num_compa
     num_companies = int(num_companies)
     if df.empty: return {'text': "DataFrame vazio. Não foi possível realizar a consulta."}
     if 'TOTAL_REMUNERACAO_ORGAO' not in df.columns or 'NOME_COMPANHIA' not in df.columns or \
-       'ORGAO_ADMINISTRACAO' not in df.columns or 'ANO_REFER' not in df.columns:
+       'ORGAA_ADMINISTRACAO' not in df.columns or 'ANO_REFER' not in df.columns:
         return {'text': "Colunas necessárias (TOTAL_REMUNERACAO_ORGAO, NOME_COMPANHIA, ORGAO_ADMINISTRACAO, ANO_REFER) não encontradas."}
     filtered_df = df[(df['ORGAO_ADMINISTRACAO'].str.contains(orgao_name, na=False, case=False)) &
                      (df['ANO_REFER'] == year)].copy()
@@ -617,24 +618,33 @@ def chat_with_data_agent(query: str):
     """
 
     # --- Tratamento do Histórico para start_chat ---
-    # `st.session_state.messages` agora armazena dicionários Python simples
-    # Precisamos convertê-los para o formato glm.Content antes de passar para start_chat
+    # `st.session_state.messages` armazena dicionários Python simples
+    # Vamos converter para o formato de histórico que o genai espera (`glm.Content` objects)
     chat_history_for_gemini = []
     for msg in st.session_state.messages:
-        # Verifica se o 'parts' é uma lista (como esperamos para mensagens GenAI)
-        if isinstance(msg.get("parts"), list):
-            # Adiciona apenas as partes de texto, ignorando meta-dados de exibição ou tool_output complexo
-            # O histórico do LLM precisa do que foi "dito", não dos detalhes internos das ferramentas.
-            parts_for_gemini = []
-            for part in msg["parts"]:
-                if isinstance(part, dict) and "text" in part:
-                    parts_for_gemini.append(glm.Part(text=part["text"]))
-                # Se houver outros tipos de 'parts' (e.g., function_call, function_response),
-                # o modelo automaticamente os reintegra à conversa.
-                # Não é necessário construir glm.FunctionCall/Response manualmente aqui para o histórico.
-                # A resposta 'response.candidates[0].content' já é um glm.Content e será armazenada.
-            chat_history_for_gemini.append(glm.Content(role=msg["role"], parts=parts_for_gemini))
+        # AQUI É ONDE O PROBLEMA OCORRIA: A conversão para glm.Part
+        # Em vez de construir glm.Content e glm.Part explicitamente,
+        # passamos o dicionário {"role": "...", "parts": [{"text": "..."}]} diretamente.
+        # O GenAI é inteligente o suficiente para converter isso.
+        
+        # Certifique-se que o formato do `msg` no `st.session_state.messages` é:
+        # {"role": "user/assistant", "parts": [{"text": "texto"}]}
+        # Ou {"role": "user/assistant", "parts": [{"function_call": {...}}]} etc.
+        # Estamos simplificando para que `parts` contenha dicionários com "text" ou "image_base64" para exibição.
+        
+        # Para o histórico do GenAI, ele precisa de 'role' e 'parts' (que é uma lista de objetos Part).
+        # Se 'parts' no seu dict de session_state já é uma lista de dicionários com 'text',
+        # o GenAI geralmente consegue converter.
+        
+        # Adicione apenas o que o GenAI precisa para o histórico
+        history_entry = {"role": msg["role"], "parts": []}
+        for part_data in msg["parts"]:
+            if "text" in part_data:
+                history_entry["parts"].append({"text": part_data["text"]})
+            # Não precisamos adicionar imagens ou outros dados específicos de exibição ao histórico do LLM
+            # Ele só precisa do "diálogo" e das chamadas/respostas de ferramentas.
 
+        chat_history_for_gemini.append(history_entry)
 
     # Iniciar o chat com o modelo e a instrução do sistema
     chat = model.start_chat(history=chat_history_for_gemini, system_instruction=system_instruction)
@@ -679,13 +689,10 @@ def chat_with_data_agent(query: str):
             tool_output = {'text': f"Erro ao executar a função '{function_name}': {e}"}
 
         # Enviar o resultado da ferramenta de volta para o modelo
-        response = chat.send_message(glm.Part(function_response=glm.FunctionResponse(
-            name=function_name,
-            response=tool_output 
-        )))
+        # Passando um dicionário que o GenAI pode converter para FunctionResponse
+        response = chat.send_message({"function_response": {"name": function_name, "response": tool_output}})
     
     # --- Atualização do Histórico e Exibição para Streamlit ---
-    # Adicionar a resposta do agente ao histórico de mensagens
     # Armazenar o objeto Content gerado pelo modelo como um dicionário simples
     final_model_content = response.candidates[0].content
     
@@ -694,16 +701,9 @@ def chat_with_data_agent(query: str):
     for part in final_model_content.parts:
         if glm.is_text(part):
             simple_parts.append({"text": part.text})
-        elif glm.is_function_call(part):
-            # Opcional: Adicionar chamada de função ao histórico para depuração.
-            # simple_parts.append({"function_call": {"name": part.function_call.name, "args": dict(part.function_call.args)}})
-            pass
-        elif glm.is_function_response(part):
-            # Opcional: Adicionar resposta de função ao histórico para depuração.
-            # simple_parts.append({"function_response": part.function_response})
-            pass
-
-    # Apenas adicione o texto principal da resposta do modelo e, se houver, a imagem do tool_output
+        # Você pode adicionar lógicas para outros tipos de 'part' se quiser armazená-los.
+        # Ex: function_call, function_response - mas para exibição simples, texto é suficiente.
+    
     message_to_store = {"role": "assistant", "parts": simple_parts}
     if 'image_base64' in tool_output and tool_output['image_base64']:
         message_to_store['image_base64'] = tool_output['image_base64']
