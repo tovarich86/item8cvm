@@ -9,8 +9,7 @@ import streamlit as st # Importar Streamlit
 # Importar a biblioteca do Google Generative AI
 import google.generativeai as genai
 # Importar tipos específicos para gerenciar o histórico de chat
-# Estes serão usados no back-end pelo start_chat, mas não vamos construí-los explicitamente aqui para o session_state
-from google.generativeai.types import content_types as glm # Mantido para glm.is_text, glm.is_function_call, etc.
+from google.generativeai.types import content_types as glm
 
 
 # --- Configurações para melhor visualização dos gráficos ---
@@ -21,16 +20,19 @@ plt.rcParams['font.family'] = 'sans-serif'
 plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial', 'Helvetica', 'sans-serif'] 
 
 # --- Configuração da API do Gemini ---
+# No Streamlit Cloud, adicione sua chave GEMINI_API_KEY aos segredos (ícone de engrenagem -> Secrets)
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=GEMINI_API_KEY)
 except Exception as e:
     st.error(f"ERRO: Não foi possível configurar a API do Gemini. Certifique-se de que a chave 'GEMINI_API_KEY' está configurada nos segredos do Streamlit. Erro: {e}")
-    st.stop()
+    st.stop() # Para a execução se a API não estiver configurada
 
 # --- Carregamento do CSV Resultante ---
 output_csv_filename = 'dados_cvm_mesclados.csv'
 
+# Carrega o DataFrame apenas uma vez e o armazena no estado da sessão do Streamlit
+# para evitar recarregamento a cada interação.
 if 'df_resultante' not in st.session_state:
     st.info(f"Tentando carregar o arquivo CSV: '{output_csv_filename}'...")
     try:
@@ -55,12 +57,10 @@ if df_resultante.empty:
     st.stop()
 
 # --- 3. Definição das Funções de Consulta (Ferramentas) ---
-# TODAS AS SUAS FUNÇÕES 'GET_...' DEVEM VIR AQUI.
-# Certifique-se que o conteúdo delas está como no código corrigido anteriormente
-# (com int() nas entradas numéricas e retorno dict {'text': ..., 'image_base64': ...})
+# Todas as funções get_... aqui, com as conversões int() e retorno dict.
 
-def get_salario_medio_diretoria(df, year: int) -> dict: 
-    year = int(year) 
+def get_salario_medio_diretoria(df, year: int) -> dict:
+    year = int(year)
     if df.empty: return {'text': "DataFrame vazio. Não foi possível realizar a consulta."}
     if 'SALARIO' not in df.columns or 'ORGAO_ADMINISTRACAO' not in df.columns or 'ANO_REFER' not in df.columns:
         return {'text': "Colunas necessárias (SALARIO, ORGAO_ADMINISTRACAO, ANO_REFER) não encontradas."}
@@ -157,7 +157,7 @@ def get_remuneration_trend_by_orgao(df, orgao: str, start_year: int, end_year: i
     if 'VALOR_MEDIO_REMUNERACAO' not in df.columns and 'TOTAL_REMUNERACAO_ORGAO' not in df.columns:
         return {'text': "Nenhuma coluna de remuneração (VALOR_MEDIO_REMUNERACAO ou TOTAL_REMUNERACAO_ORGAO) encontrada para análise de tendência.", 'image_base64': None}
     if 'ORGAO_ADMINISTRACAO' not in df.columns or 'ANO_REFER' not in df.columns:
-        return {'text': "Colunas necessárias (ORGAO_ADMINISTRACAO, ANO_REFER) não encontradas."}
+        return {'text': "Colunas necessárias (ORGAO_ADMINISTRACAO, ANO_REFER) não encontradas.", 'image_base64': None}
     remuneration_col = 'VALOR_MEDIO_REMUNERACAO' if 'VALOR_MEDIO_REMUNERACAO' in df.columns else 'TOTAL_REMUNERACAO_ORGAO'
     if remuneration_col not in df.columns:
         return {'text': f"Coluna de remuneração '{remuneration_col}' não encontrada.", 'image_base64': None}
@@ -409,7 +409,7 @@ def get_top_bottom_remuneration_values(df, orgao_name: str, year: int, num_compa
     num_companies = int(num_companies)
     if df.empty: return {'text': "DataFrame vazio. Não foi possível realizar a consulta."}
     if 'TOTAL_REMUNERACAO_ORGAO' not in df.columns or 'NOME_COMPANHIA' not in df.columns or \
-       'ORGAA_ADMINISTRACAO' not in df.columns or 'ANO_REFER' not in df.columns:
+       'ORGAO_ADMINISTRACAO' not in df.columns or 'ANO_REFER' not in df.columns: # Corrigido 'ORGAA_ADMINISTRACAO'
         return {'text': "Colunas necessárias (TOTAL_REMUNERACAO_ORGAO, NOME_COMPANHIA, ORGAO_ADMINISTRACAO, ANO_REFER) não encontradas."}
     filtered_df = df[(df['ORGAO_ADMINISTRACAO'].str.contains(orgao_name, na=False, case=False)) &
                      (df['ANO_REFER'] == year)].copy()
@@ -435,7 +435,9 @@ def get_top_bottom_remuneration_values(df, orgao_name: str, year: int, num_compa
         result_text += "Nenhum dado de menores remunerações.\n"
     return {'text': result_text}
 
+
 # --- 4. Definição das Ferramentas (Tool Specifications) para o Gemini ---
+# Certifique-se de que Type.OBJECT etc. estão corretamente referenciados.
 tools = [
     genai.protos.FunctionDeclaration(
         name='get_salario_medio_diretoria',
@@ -619,103 +621,130 @@ def chat_with_data_agent(query: str):
 
     # --- Tratamento do Histórico para start_chat ---
     # `st.session_state.messages` armazena dicionários Python simples
-    # Vamos converter para o formato de histórico que o genai espera (`glm.Content` objects)
+    # Convertemos para o formato que o GenAI espera (`glm.Content` objects) no momento da chamada
     chat_history_for_gemini = []
     for msg in st.session_state.messages:
-        # AQUI É ONDE O PROBLEMA OCORRIA: A conversão para glm.Part
-        # Em vez de construir glm.Content e glm.Part explicitamente,
-        # passamos o dicionário {"role": "...", "parts": [{"text": "..."}]} diretamente.
-        # O GenAI é inteligente o suficiente para converter isso.
+        # Cria uma lista de 'parts' no formato que glm.Content.from_dict espera
+        content_parts_for_glm = []
+        if isinstance(msg.get("parts"), list):
+            for part_data in msg["parts"]:
+                if "text" in part_data:
+                    content_parts_for_glm.append({"text": part_data["text"]})
+                # Se houver outras chaves como 'function_call' ou 'function_response' nos parts
+                # que o LLM gerou no histórico, elas serão tratadas por from_dict automaticamente
+                # se o dicionário original for compatível.
         
-        # Certifique-se que o formato do `msg` no `st.session_state.messages` é:
-        # {"role": "user/assistant", "parts": [{"text": "texto"}]}
-        # Ou {"role": "user/assistant", "parts": [{"function_call": {...}}]} etc.
-        # Estamos simplificando para que `parts` contenha dicionários com "text" ou "image_base64" para exibição.
-        
-        # Para o histórico do GenAI, ele precisa de 'role' e 'parts' (que é uma lista de objetos Part).
-        # Se 'parts' no seu dict de session_state já é uma lista de dicionários com 'text',
-        # o GenAI geralmente consegue converter.
-        
-        # Adicione apenas o que o GenAI precisa para o histórico
-        history_entry = {"role": msg["role"], "parts": []}
-        for part_data in msg["parts"]:
-            if "text" in part_data:
-                history_entry["parts"].append({"text": part_data["text"]})
-            # Não precisamos adicionar imagens ou outros dados específicos de exibição ao histórico do LLM
-            # Ele só precisa do "diálogo" e das chamadas/respostas de ferramentas.
-
-        chat_history_for_gemini.append(history_entry)
+        # Converte o dicionário de mensagem para um objeto glm.Content
+        try:
+            chat_history_for_gemini.append(glm.Content.from_dict({"role": msg["role"], "parts": content_parts_for_glm}))
+        except Exception as e:
+            st.error(f"Erro crítico ao converter mensagem para histórico do Gemini: {e}. Mensagem: {msg}")
+            # Se isso ocorrer, o formato do histórico armazenado no session_state é inválido.
+            # Limpar o histórico pode ser necessário para recuperar.
+            chat_history_for_gemini = [] # Limpa histórico para tentar continuar
+            st.session_state.messages = []
+            st.session_state.messages.append({"role": "assistant", "parts": [{"text": "Ops! Houve um problema com o histórico da conversa. Por favor, tente recarregar a página e fazer sua pergunta novamente."}]})
+            return # Sai da função para evitar mais erros
 
     # Iniciar o chat com o modelo e a instrução do sistema
-    chat = model.start_chat(history=chat_history_for_gemini, system_instruction=system_instruction)
-    response = chat.send_message(query)
+    try:
+        chat = model.start_chat(history=chat_history_for_gemini, system_instruction=system_instruction)
+    except Exception as e:
+        st.error(f"Erro ao iniciar o chat com o Gemini (start_chat): {e}")
+        st.warning("Isso pode indicar um problema com a chave da API, cota excedida, ou histórico inválido. Por favor, tente recarregar a página.")
+        st.session_state.messages = [] # Limpa o histórico em caso de erro no start_chat
+        return
 
-    # Verificar se o modelo decidiu chamar uma ferramenta
-    if response.candidates[0].content.parts[0].function_call:
-        function_call = response.candidates[0].content.parts[0].function_call
-        function_name = function_call.name
-        function_args = dict(function_call.args) 
-        
-        tool_output = {} 
-        try:
-            # Passar o DataFrame do estado da sessão para as funções
-            if function_name == 'get_salario_medio_diretoria':
-                tool_output = get_salario_medio_diretoria(df_resultante, **function_args)
-            elif function_name == 'get_top_companies_by_salary':
-                tool_output = get_top_companies_by_salary(df_resultante, **function_args)
-            elif function_name == 'get_total_bonus_by_company':
-                tool_output = get_total_bonus_by_company(df_resultante, **function_args)
-            elif function_name == 'get_sector_bonus_range':
-                tool_output = get_sector_bonus_range(df_resultante, **function_args)
-            elif function_name == 'get_remuneration_trend_by_orgao':
-                tool_output = get_remuneration_trend_by_orgao(df_resultante, **function_args)
-            elif function_name == 'get_avg_bonus_effective_by_sector':
-                tool_output = get_avg_bonus_effective_by_sector(df_resultante, **function_args)
-            elif function_name == 'get_top_sectors_by_avg_total_remuneration':
-                tool_output = get_top_sectors_by_avg_total_remuneration(df_resultante, **function_args)
-            elif function_name == 'get_remuneration_as_percentage_of_revenue':
-                tool_output = get_remuneration_as_percentage_of_revenue(df_resultante, **function_args)
-            elif function_name == 'get_correlation_members_bonus':
-                tool_output = get_correlation_members_bonus(df_resultante, **function_args)
-            elif function_name == 'get_avg_remuneration_by_orgao_segment':
-                tool_output = get_avg_remuneration_by_orgao_segment(df_resultante, **function_args)
-            elif function_name == 'get_remuneration_structure_proportion':
-                tool_output = get_remuneration_structure_proportion(df_resultante, **function_args)
-            elif function_name == 'get_top_bottom_remuneration_values':
-                tool_output = get_top_bottom_remuneration_values(df_resultante, **function_args)
-            else:
-                tool_output = {'text': f"Erro: Função '{function_name}' não reconhecida ou não implementada."}
-        except Exception as e:
-            tool_output = {'text': f"Erro ao executar a função '{function_name}': {e}"}
+    response = None # Inicializa response
+    try:
+        response = chat.send_message(query)
+    except Exception as e:
+        st.error(f"Erro ao enviar mensagem ao Gemini (send_message): {e}")
+        st.warning("Isso pode indicar um problema de rede ou cota da API. Por favor, tente novamente.")
+        return
 
-        # Enviar o resultado da ferramenta de volta para o modelo
-        # Passando um dicionário que o GenAI pode converter para FunctionResponse
-        response = chat.send_message({"function_response": {"name": function_name, "response": tool_output}})
-    
+    # Processar a resposta do Gemini
+    tool_output = {} # Inicializa tool_output para garantir que existe
+
+    if response and response.candidates and response.candidates[0].content.parts:
+        # Verificar se o modelo decidiu chamar uma ferramenta
+        if response.candidates[0].content.parts[0].function_call:
+            function_call = response.candidates[0].content.parts[0].function_call
+            function_name = function_call.name
+            function_args = dict(function_call.args) 
+            
+            # st.write(f"Agente (chamando ferramenta): {function_name} com args {function_args}") # Para depuração
+
+            try:
+                if function_name == 'get_salario_medio_diretoria':
+                    tool_output = get_salario_medio_diretoria(df_resultante, **function_args)
+                elif function_name == 'get_top_companies_by_salary':
+                    tool_output = get_top_companies_by_salary(df_resultante, **function_args)
+                elif function_name == 'get_total_bonus_by_company':
+                    tool_output = get_total_bonus_by_company(df_resultante, **function_args)
+                elif function_name == 'get_sector_bonus_range':
+                    tool_output = get_sector_bonus_range(df_resultante, **function_args)
+                elif function_name == 'get_remuneration_trend_by_orgao':
+                    tool_output = get_remuneration_trend_by_orgao(df_resultante, **function_args)
+                elif function_name == 'get_avg_bonus_effective_by_sector':
+                    tool_output = get_avg_bonus_effective_by_sector(df_resultante, **function_args)
+                elif function_name == 'get_top_sectors_by_avg_total_remuneration':
+                    tool_output = get_top_sectors_by_avg_total_remuneration(df_resultante, **function_args)
+                elif function_name == 'get_remuneration_as_percentage_of_revenue':
+                    tool_output = get_remuneration_as_percentage_of_revenue(df_resultante, **function_args)
+                elif function_name == 'get_correlation_members_bonus':
+                    tool_output = get_correlation_members_bonus(df_resultante, **function_args)
+                elif function_name == 'get_avg_remuneration_by_orgao_segment':
+                    tool_output = get_avg_remuneration_by_orgao_segment(df_resultante, **function_args)
+                elif function_name == 'get_remuneration_structure_proportion':
+                    tool_output = get_remuneration_structure_proportion(df_resultante, **function_args)
+                elif function_name == 'get_top_bottom_remuneration_values':
+                    tool_output = get_top_bottom_remuneration_values(df_resultante, **function_args)
+                else:
+                    tool_output = {'text': f"Erro: Função '{function_name}' não reconhecida ou não implementada."}
+            except Exception as e:
+                tool_output = {'text': f"Erro ao executar a função '{function_name}': {e}"}
+
+            # Enviar o resultado da ferramenta de volta para o modelo
+            try:
+                response = chat.send_message({"function_response": {"name": function_name, "response": tool_output}})
+            except Exception as e:
+                st.error(f"Erro ao enviar resposta da ferramenta ao Gemini: {e}")
+                st.warning("Isso pode indicar um problema na resposta da ferramenta. Tente novamente.")
+                return
+
     # --- Atualização do Histórico e Exibição para Streamlit ---
-    # Armazenar o objeto Content gerado pelo modelo como um dicionário simples
-    final_model_content = response.candidates[0].content
-    
-    # Converte o Content complexo do GenAI para um dicionário simples para Streamlit.session_state
-    simple_parts = []
-    for part in final_model_content.parts:
-        if glm.is_text(part):
-            simple_parts.append({"text": part.text})
-        # Você pode adicionar lógicas para outros tipos de 'part' se quiser armazená-los.
-        # Ex: function_call, function_response - mas para exibição simples, texto é suficiente.
-    
-    message_to_store = {"role": "assistant", "parts": simple_parts}
-    if 'image_base64' in tool_output and tool_output['image_base64']:
-        message_to_store['image_base64'] = tool_output['image_base64']
-    st.session_state.messages.append(message_to_store)
+    if response and response.candidates and response.candidates[0].content:
+        final_model_content = response.candidates[0].content
+        
+        simple_parts = []
+        for part in final_model_content.parts:
+            if glm.is_text(part):
+                simple_parts.append({"text": part.text})
+            # Lidar com function_call/function_response do modelo, se o LLM as gera no meio da conversa
+            elif glm.is_function_call(part):
+                simple_parts.append({"text": f"Agente chamou a função: {part.function_call.name}"}) # Para exibir ao usuário
+            elif glm.is_function_response(part):
+                # Se a resposta da ferramenta é exibível, adicione aqui (o LLM reage a ela e gera texto)
+                if isinstance(part.function_response, dict) and 'text' in part.function_response:
+                    simple_parts.append({"text": f"Resposta da ferramenta: {part.function_response['text']}"})
 
-    # Exibir a resposta final do modelo na interface do Streamlit
-    with st.chat_message("assistant"):
-        for part_data in simple_parts:
-            if "text" in part_data:
-                st.markdown(part_data["text"])
-        if 'image_base64' in message_to_store:
-            st.image(base64.b64decode(message_to_store['image_base64']), caption="Gráfico gerado pelo agente")
+        message_to_store = {"role": "assistant", "parts": simple_parts}
+        # Adicionar imagem ao dicionário da mensagem se existir no tool_output
+        if 'image_base64' in tool_output and tool_output['image_base64']:
+            message_to_store['image_base64'] = tool_output['image_base64']
+        st.session_state.messages.append(message_to_store)
+
+        # Exibir a resposta final do modelo na interface do Streamlit
+        with st.chat_message("assistant"):
+            for part_data in simple_parts:
+                if "text" in part_data:
+                    st.markdown(part_data["text"])
+            if 'image_base64' in message_to_store:
+                st.image(base64.b64decode(message_to_store['image_base64']), caption="Gráfico gerado pelo agente")
+    else:
+        st.error("O Gemini não forneceu uma resposta válida.")
+        st.session_state.messages.append({"role": "assistant", "parts": [{"text": "Desculpe, o Gemini não conseguiu gerar uma resposta válida. Por favor, tente novamente."}]})
 
 
 # --- Interface do Streamlit ---
