@@ -8,8 +8,8 @@ import streamlit as st # Importar Streamlit
 
 # Importar a biblioteca do Google Generative AI
 import google.generativeai as genai
-# Importar tipos específicos para gerenciar o histórico de chat
-from google.generativeai.types import content_types as glm
+# Importar tipos específicos (não usados diretamente para construção aqui, mas para referência)
+# from google.generativeai.types import content_types as glm # Não mais necessário se não for usar glm.is_text etc.
 
 
 # --- Configurações para melhor visualização dos gráficos ---
@@ -26,7 +26,7 @@ try:
     genai.configure(api_key=GEMINI_API_KEY)
 except Exception as e:
     st.error(f"ERRO: Não foi possível configurar a API do Gemini. Certifique-se de que a chave 'GEMINI_API_KEY' está configurada nos segredos do Streamlit. Erro: {e}")
-    st.stop() # Para a execução se a API não estiver configurada
+    st.stop()
 
 # --- Carregamento do CSV Resultante ---
 output_csv_filename = 'dados_cvm_mesclados.csv'
@@ -264,7 +264,7 @@ def get_remuneration_as_percentage_of_revenue(df, num_companies: int, sector_nam
     top_companies = top_companies.sort_values(by='Remuneracao_Percentual_Receita', ascending=False)
     result_text = f"Remuneração Total como Percentual da Receita para as top {num_companies} empresas do setor '{sector_name}' em {year} (ordenado por %):\n"
     for index, row in top_companies.iterrows():
-        result_text += (f"- {row['NOME_COMPANHIA']}: Receita R$ {row['Receita']:,.2f}, "
+        result_text += (f"- {row['NOME_COMPANHIA']}: Receita R$ {row['RECEITA']:,.2f}, "
                         f"Remuneração Total R$ {row['Total_Remuneracao']:,.2f}, "
                         f"Percentual: {row['Remuneracao_Percentual_Receita']:,.2f}%\n")
     return {'text': result_text}
@@ -317,7 +317,7 @@ def get_avg_remuneration_by_orgao_segment(df, orgao_name: str, year: int) -> dic
     if df.empty: return {'text': "DataFrame vazio. Não foi possível realizar a consulta.", 'image_base64': None}
     if 'TOTAL_REMUNERACAO_ORGAO' not in df.columns or 'ORGAO_ADMINISTRACAO' not in df.columns or \
        'SETOR_DE_ATIVDADE' not in df.columns or 'ANO_REFER' not in df.columns:
-        return {'text': "Colunas necessárias (TOTAL_REMUNERACAO_ORGAO, ORGAO_ADMINISTRACAO, SETOR_DE_ATIVDADE, ANO_REFER) não encontradas.", 'image_base64': None}
+        return {'text': "Colunas necessárias (TOTAL_REMUNERACAO_ORGAO, ORGAO_ADMINISTRACAO, SETOR_DE_ATIVDADE, ANO_REFER) não encontradas."}
     filtered_df = df[(df['ORGAO_ADMINISTRACAO'].str.contains(orgao_name, na=False, case=False)) &
                      (df['ANO_REFER'] == year)].copy()
     if filtered_df.empty:
@@ -588,7 +588,6 @@ tools = [
 ]
 
 # --- 5. Inicialização do Modelo Gemini com Ferramentas ---
-# O parâmetro tools agora recebe a lista de dicionários
 model = genai.GenerativeModel(model_name='gemini-1.5-flash', tools=tools)
 
 # --- 6. Função para Interagir com o Agente ---
@@ -623,17 +622,19 @@ def chat_with_data_agent(query: str):
 
     # --- Tratamento do Histórico para start_chat (priming) ---
     # `st.session_state.messages` armazena dicionários Python simples
-    # Vamos criar um histórico temporário para passar ao start_chat,
-    # injetando a instrução do sistema como a primeira mensagem de usuário.
+    # Criar um histórico temporário para passar ao start_chat,
+    # injetando a instrução do sistema como a primeira mensagem de "usuário".
     
-    # Criar um histórico que começa com a instrução do sistema
     chat_history_for_gemini = [
         {"role": "user", "parts": [{"text": system_instruction_text}]}
     ]
     # Adicionar o restante do histórico salvo na sessão
     for msg in st.session_state.messages:
-        # As mensagens salvas no session_state já devem ser compatíveis com {"role": ..., "parts": [{"text": ...}]}
-        chat_history_for_gemini.append(msg)
+        # Copia a mensagem, removendo chaves que não são aceitas pela API do Gemini no histórico
+        temp_msg = msg.copy()
+        if 'image_base64' in temp_msg: # Remove a chave de imagem que é só para exibição
+            del temp_msg['image_base64']
+        chat_history_for_gemini.append(temp_msg)
 
 
     # Iniciar o chat com o modelo. Removido 'system_instruction' como parâmetro.
@@ -643,6 +644,8 @@ def chat_with_data_agent(query: str):
         st.error(f"Erro ao iniciar o chat com o Gemini (start_chat): {e}")
         st.warning("Isso pode indicar um problema com a chave da API, cota excedida, ou formato de histórico inválido. Por favor, tente recarregar a página.")
         st.session_state.messages = [] # Limpa o histórico em caso de erro no start_chat
+        # Mensagem de boas-vindas deve ser adicionada novamente após limpar o histórico
+        st.session_state.messages.append({"role": "assistant", "parts": [{"text": "Olá! Sou seu agente de análise de remunerações da CVM. Como posso ajudar hoje?"}]})
         return
 
     response = None 
@@ -709,7 +712,6 @@ def chat_with_data_agent(query: str):
     if response and response.candidates and response.candidates[0].content:
         final_model_content = response.candidates[0].content
         
-        # Converte o Content complexo do GenAI para um dicionário simples para Streamlit.session_state
         simple_parts = []
         for part in final_model_content.parts:
             # verifica se a 'part' tem o atributo 'text' antes de acessá-lo.
@@ -717,16 +719,20 @@ def chat_with_data_agent(query: str):
                 simple_parts.append({"text": part.text})
             # Lidar com function_call/function_response do modelo, se o LLM as gera no meio da conversa
             elif hasattr(part, 'function_call') and part.function_call is not None:
-                simple_parts.append({"text": f"Agente chamou a função: {part.function_call.name}"}) # Para exibir ao usuário
+                # Se o LLM gerou uma chamada de função na resposta, podemos exibi-la para depuração
+                # mas não deve ser a resposta final visível ao usuário.
+                simple_parts.append({"text": f"Agente chamou a função: {part.function_call.name}"})
             elif hasattr(part, 'function_response') and part.function_response is not None:
-                # A resposta da ferramenta é exibível, adicione aqui (o LLM reage a ela e gera texto)
+                # Se o LLM gerou uma resposta de ferramenta na resposta, pode ser exibido para depuração
+                # mas a resposta final do LLM deve ser o texto.
                 if isinstance(part.function_response, dict) and 'text' in part.function_response:
                     simple_parts.append({"text": f"Resposta da ferramenta: {part.function_response['text']}"})
 
         message_to_store = {"role": "assistant", "parts": simple_parts}
-        # Adicionar imagem ao dicionário da mensagem se existir no tool_output
+        # Adicionar imagem ao dicionário da mensagem SEPARADAMENTE, para exibição no Streamlit
         if 'image_base64' in tool_output and tool_output['image_base64']:
-            message_to_store['image_base64'] = tool_output['image_base64']
+            message_to_store['image_base64_for_display'] = tool_output['image_base64'] # Chave para exibição
+
         st.session_state.messages.append(message_to_store)
 
         # Exibir a resposta final do modelo na interface do Streamlit
@@ -734,8 +740,9 @@ def chat_with_data_agent(query: str):
             for part_data in simple_parts:
                 if "text" in part_data:
                     st.markdown(part_data["text"])
-            if 'image_base64' in message_to_store:
-                st.image(base64.b64decode(message_to_store['image_base64']), caption="Gráfico gerado pelo agente")
+            # Exibir a imagem usando a nova chave
+            if 'image_base64_for_display' in message_to_store:
+                st.image(base64.b64decode(message_to_store['image_base64_for_display']), caption="Gráfico gerado pelo agente")
     else:
         st.error("O Gemini não forneceu uma resposta válida.")
         st.session_state.messages.append({"role": "assistant", "parts": [{"text": "Desculpe, o Gemini não conseguiu gerar uma resposta válida. Por favor, tente novamente."}]})
@@ -748,39 +755,19 @@ st.markdown("Faça perguntas sobre os dados de remuneração de administradores 
 # Inicializar histórico de chat no estado da sessão do Streamlit
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    # A instrução do sistema será a primeira mensagem do usuário para 'priming'
-    # Adicionar uma mensagem de boas-vindas inicial do assistente (para o usuário)
+    # Adiciona uma mensagem de boas-vindas inicial do assistente
     st.session_state.messages.append({"role": "assistant", "parts": [{"text": "Olá! Sou seu agente de análise de remunerações da CVM. Como posso ajudar hoje?"}]})
 
 
 # Exibir mensagens anteriores no chat
 for message_entry in st.session_state.messages:
-    # Ignorar a primeira mensagem (instrução do sistema) se ela for do 'user' e estiver vazia (priming)
-    # ou se for apenas a instrução do sistema que não deve ser exibida ao usuário final.
-    # No entanto, como a instrução agora será a primeira 'user' message que o LLM vê,
-    # não queremos exibi-la como parte do chat visível.
-    # A mensagem de boas-vindas do assistente é a que inicia o diálogo.
-    
-    # Exibir apenas se a mensagem não for a primeira mensagem (que é o priming)
-    # ou se for uma mensagem 'assistant'.
-    
-    # Para evitar exibir a instrução do sistema como uma mensagem do usuário:
-    # Se a mensagem for do usuário E for a primeira mensagem (o priming), não exiba.
-    # Uma forma mais robusta é ter um flag 'is_system_priming_message'.
-    
-    # Por enquanto, vamos exibir todas as mensagens de 'assistant' e as mensagens de 'user'
-    # que não são a mensagem de priming inicial (que não está no st.session_state.messages
-    # no mesmo formato que o priming para o LLM)
-    
-    # Vamos exibir todas as mensagens salvas, confiando que o priming não é salvo visivelmente.
-    # Apenas para garantir que não há erro, vamos re-verificar o loop abaixo.
-
     with st.chat_message(message_entry["role"]):
         for part_data in message_entry["parts"]:
             if "text" in part_data:
                 st.markdown(part_data["text"])
-        if 'image_base64' in message_entry: # Se a mensagem armazenada tinha uma imagem
-            st.image(base64.b64decode(message_entry['image_base64']), caption="Gráfico gerado (Histórico)")
+        # Exibir a imagem se ela estiver na chave específica para exibição
+        if 'image_base64_for_display' in message_entry:
+            st.image(base64.b64decode(message_entry['image_base64_for_display']), caption="Gráfico gerado (Histórico)")
 
 
 # Campo de entrada para o usuário
